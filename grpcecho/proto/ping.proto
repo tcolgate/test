@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package ping;
+
+service Ping {
+  // Sends a greeting
+  rpc Ping (PingRequest) returns (PingReply) {}
+}
+
+message PingRequest {
+  int64 timeOut = 1;
+}
+
+message PingReply {
+  int64 timeBack = 1;
+}
