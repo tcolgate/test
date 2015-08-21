@@ -29,7 +29,7 @@ type pingServer struct {
 // pingDownstream isn't great, we create a new client every time,
 // but we kinda want this to suck a but to make things more interesting
 // to perf trace
-func pingDownstream(d string, wg *sync.WaitGroup) (err error) {
+func pingDownstream(ctx context.Context, d string, wg *sync.WaitGroup) (err error) {
 	defer wg.Done()
 	conn, err := grpc.Dial(d, grpc.WithBlock())
 	if err != nil {
@@ -38,8 +38,6 @@ func pingDownstream(d string, wg *sync.WaitGroup) (err error) {
 	defer conn.Close()
 
 	client := pb.NewPingClient(conn)
-
-	ctx := context.Background()
 
 	t := time.Now()
 	req := pb.PingRequest{t.UnixNano()}
@@ -50,11 +48,11 @@ func pingDownstream(d string, wg *sync.WaitGroup) (err error) {
 	return nil
 }
 
-func (p *pingServer) pingDownStreams() {
+func (p *pingServer) pingDownStreams(ctx context.Context) {
 	var wg sync.WaitGroup // waitgroup == code smell ?
 	for _, d := range p.downstreams {
 		wg.Add(1)
-		go pingDownstream(d, &wg)
+		go pingDownstream(ctx, d, &wg)
 	}
 	wg.Wait()
 }
@@ -63,7 +61,7 @@ func (p *pingServer) Ping(ctx context.Context, pr *pb.PingRequest) (*pb.PingRepl
 	t := time.Now()
 	r := &pb.PingReply{t.UnixNano()}
 
-	p.pingDownStreams()
+	p.pingDownStreams(ctx)
 
 	//if tr, ok := trace.FromContext(ctx); ok {
 	//		tr.LazyPrintf("some event happened")
