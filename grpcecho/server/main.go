@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -21,6 +22,8 @@ import (
 var port = flag.String("port", ":4567", "the port to run grpc on")
 var httpPort = flag.String("httpPort", ":8080", "the port to run the debug stuff on")
 var downstreams = flag.String("downstream", "", "Ping these downstream servers")
+var delay = flag.Int64("delay", 0, "Time, in ms, to delay after downstreams have been pinged")
+var normDelay = flag.Bool("normDelay", false, "The delay will be given a bit of variation")
 
 type pingServer struct {
 	downstreams []string
@@ -29,48 +32,59 @@ type pingServer struct {
 // pingDownstream isn't great, we create a new client every time,
 // but we kinda want this to suck a but to make things more interesting
 // to perf trace
-func pingDownstream(ctx context.Context, d string, wg *sync.WaitGroup) (err error) {
+func pingOneDownstream(ctx context.Context, d string, wg *sync.WaitGroup) (err error) {
 	defer wg.Done()
-	conn, err := grpc.Dial(d, grpc.WithBlock())
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
 
-	client := pb.NewPingClient(conn)
+	done := make(chan error)
 
-	t := time.Now()
-	req := pb.PingRequest{t.UnixNano()}
-	_, err = client.Ping(ctx, &req)
-	if err != nil {
-		return err
+	go func() {
+		conn, err := grpc.Dial(d, grpc.WithBlock())
+		if err != nil {
+			done <- err
+			return
+		}
+		defer conn.Close()
+
+		client := pb.NewPingClient(conn)
+
+		t := time.Now()
+		req := pb.PingRequest{t.UnixNano()}
+		_, err = client.Ping(ctx, &req)
+		done <- err
+	}()
+
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		err = ctx.Err()
 	}
-	return nil
+
+	return err
 }
 
-func (p *pingServer) pingDownStreams(ctx context.Context) {
+func (p *pingServer) pingAllDownStreams(ctx context.Context) {
 	var wg sync.WaitGroup // waitgroup == code smell ?
+	ctx, cancel := context.WithCancel(ctx)
+
 	for _, d := range p.downstreams {
 		wg.Add(1)
-		go pingDownstream(ctx, d, &wg)
+		go pingOneDownstream(ctx, d, &wg)
 	}
 	wg.Wait()
 }
 
 func (p *pingServer) Ping(ctx context.Context, pr *pb.PingRequest) (*pb.PingReply, error) {
-	t := time.Now()
-	r := &pb.PingReply{t.UnixNano()}
+	d := *delay * 1000
+	if *normDelay {
+		d = int64(rand.NormFloat64()*1000) + d
+	}
+	if d > 0 {
+		time.Sleep(time.Duration(d * int64(time.Microsecond)))
+	}
 
-	p.pingDownStreams(ctx)
+	p.pingAllDownStreams(ctx)
 
-	//if tr, ok := trace.FromContext(ctx); ok {
-	//		tr.LazyPrintf("some event happened")
-	//	}
-	//tr := trace.New("blah", "blahping")
-	//defer tr.Finish()
-	//tr.LazyPrintf("some event happened")
-
-	return r, nil
+	return &pb.PingReply{time.Now().UnixNano()}, nil
 }
 
 func main() {
