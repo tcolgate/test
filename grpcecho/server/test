@@ -1,0 +1,14 @@
+#!/bin/sh
+
+./server -port :4568 -httpPort :8081 &
+./server -port :4569 -httpPort :8082 &
+./server -delay 2 -port :4570 -httpPort :8083 -downstream localhost:4571 &
+./server -delay 1 -port :4571 -httpPort :8084 &
+./server -justOne -downstream localhost:4568,localhost:4569,localhost:4570 &
+
+
+#./server -delay 5  -port :4568 -httpPort :8081 &
+#./server -delay 10 -port :4569 -httpPort :8082 &
+#./server -delay 15 -port :4570 -httpPort :8083 -downstream localhost:4571 &
+#./server -port :4571 -httpPort :8084 &
+#./server -justOne -downstream localhost:4568,localhost:4569,localhost:4570 &
