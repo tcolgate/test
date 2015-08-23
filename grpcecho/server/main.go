@@ -24,52 +24,61 @@ var httpPort = flag.String("httpPort", ":8080", "the port to run the debug stuff
 var downstreams = flag.String("downstream", "", "Ping these downstream servers")
 var delay = flag.Int64("delay", 0, "Time, in ms, to delay after downstreams have been pinged")
 var normDelay = flag.Bool("normDelay", false, "The delay will be given a bit of variation")
+var justOne = flag.Bool("justOne", false, "One response from a downstream is enough, cancel the rest")
 
 type pingServer struct {
-	downstreams []string
+	downstreams []pb.PingClient
 }
 
 // pingDownstream isn't great, we create a new client every time,
 // but we kinda want this to suck a but to make things more interesting
 // to perf trace
-func pingOneDownstream(ctx context.Context, d string, wg *sync.WaitGroup) (err error) {
-	defer wg.Done()
-
-	done := make(chan error)
+func pingOneDownstream(ctx context.Context, d pb.PingClient, resp chan<- error) {
+	done := make(chan error, 1)
 
 	go func() {
-		conn, err := grpc.Dial(d, grpc.WithBlock())
-		if err != nil {
-			done <- err
-			return
-		}
-		defer conn.Close()
-
-		client := pb.NewPingClient(conn)
-
+		defer close(done)
 		t := time.Now()
 		req := pb.PingRequest{t.UnixNano()}
-		_, err = client.Ping(ctx, &req)
+		_, err := d.Ping(ctx, &req)
+
 		done <- err
 	}()
 
 	select {
-	case err = <-done:
+	case err := <-done:
+		resp <- err
 	case <-ctx.Done():
-		err = ctx.Err()
+		resp <- ctx.Err()
 	}
-
-	return err
 }
 
+// pingAllDownStreams waits for all the downstream pings to finish, then
+// returns
 func (p *pingServer) pingAllDownStreams(ctx context.Context) {
-	var wg sync.WaitGroup // waitgroup == code smell ?
+	resp := make(chan error)
+	wg := sync.WaitGroup{}
+	defer close(resp)
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	for _, d := range p.downstreams {
 		wg.Add(1)
-		go pingOneDownstream(ctx, d, &wg)
+		go func(d pb.PingClient) {
+			pingOneDownstream(ctx, d, resp)
+			wg.Done()
+		}(d)
 	}
+
+	maxResp := len(p.downstreams)
+
+	for i := 0; i < maxResp; i++ {
+		_ = <-resp
+		if *justOne {
+			cancel()
+		}
+	}
+
 	wg.Wait()
 }
 
@@ -78,11 +87,12 @@ func (p *pingServer) Ping(ctx context.Context, pr *pb.PingRequest) (*pb.PingRepl
 	if *normDelay {
 		d = int64(rand.NormFloat64()*1000) + d
 	}
-	if d > 0 {
-		time.Sleep(time.Duration(d * int64(time.Microsecond)))
-	}
 
-	p.pingAllDownStreams(ctx)
+	select {
+	case <-time.After(time.Duration(d * int64(time.Microsecond))):
+		p.pingAllDownStreams(ctx)
+	case <-ctx.Done():
+	}
 
 	return &pb.PingReply{time.Now().UnixNano()}, nil
 }
@@ -99,7 +109,21 @@ func main() {
 	}
 	grpcServer := grpc.NewServer()
 
-	pb.RegisterPingServer(grpcServer, &pingServer{downstreams: strings.Split(*downstreams, ",")})
+	var downstreamClients []pb.PingClient
+	for _, d := range strings.Split(*downstreams, ",") {
+		if d == "" {
+			continue
+		}
+		log.Println(d)
+		conn, err := grpc.Dial(d, grpc.WithBlock())
+		if err != nil {
+			log.Fatalf("In here " + err.Error())
+		}
+		defer conn.Close()
+
+		downstreamClients = append(downstreamClients, pb.NewPingClient(conn))
+	}
+	pb.RegisterPingServer(grpcServer, &pingServer{downstreams: downstreamClients})
 
 	go grpcServer.Serve(lis)
 
