@@ -5,9 +5,12 @@ int main(int argc, char** argv){
   char *thing = "thing";
   char *othing = "thing2";
 
-  bloom_t b = bloom_new(1000,0.5);
-  bloom_add(b,thing,strlen(thing)+1);
+  bloom_t b = bloom_new(1000,0.001);
+  printf ("m: %d\n",b->m);
+  printf ("k: %d\n",b->k);
 
-  return bloom_test(b,othing,strlen(othing)+1) ? 0 : 1;
+  bloom_add(b,othing,strlen(othing)+1);
+
+  return bloom_test(b,thing,strlen(thing)+1) ? 0 : 1;
 }
 
