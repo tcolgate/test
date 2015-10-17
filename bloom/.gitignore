@@ -1,1 +1,10 @@
 a.out
+
+*.ko
+*.ko.cmd
+*.mod.c
+*.o
+*.cmd
+modules.order
+Module.symvers
+.tmp_versions

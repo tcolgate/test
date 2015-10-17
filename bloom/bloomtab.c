@@ -28,6 +28,9 @@ struct bpf_bloom {
 /* Called from syscall */
 static struct bpf_map *bloom_map_alloc(union bpf_attr *attr)
 {
+        printk("* In function %s *\n", __FUNCTION__);
+	return ERR_PTR(-ENOMEM);
+#if 0
 	struct bpf_bloom *bloom;
 	int err, i;
 
@@ -87,17 +90,20 @@ static struct bpf_map *bloom_map_alloc(union bpf_attr *attr)
 free_bloom:
 	kfree(bloom);
 	return ERR_PTR(err);
+#endif
 }
 
 /* Called from syscall or from eBPF program */
 static void *bloom_map_lookup_elem(struct bpf_map *map, void *key)
 {
-	return -ENOENT;
+        printk("* In function %s *\n", __FUNCTION__);
+	return NULL;
 }
 
 /* Called from syscall */
 static int bloom_map_get_next_key(struct bpf_map *map, void *key, void *next_key)
 {
+        printk("* In function %s *\n", __FUNCTION__);
 	return -ENOENT;
 }
 
@@ -105,12 +111,14 @@ static int bloom_map_get_next_key(struct bpf_map *map, void *key, void *next_key
 static int bloom_map_update_elem(struct bpf_map *map, void *key, void *value,
 				u64 map_flags)
 {
+        printk("* In function %s *\n", __FUNCTION__);
   return -ENOENT;
 }
 
 /* Called from syscall or from eBPF program */
 static int bloom_map_delete_elem(struct bpf_map *map, void *key)
 {
+        printk("* In function %s *\n", __FUNCTION__);
   return -ENOENT;
 }
 
@@ -121,6 +129,7 @@ static void delete_all_elements(struct bpf_bloom *bloom)
 /* Called when map->refcnt goes to zero, either from workqueue or from syscall */
 static void bloom_map_free(struct bpf_map *map)
 {
+        printk("* In function %s *\n", __FUNCTION__);
 }
 
 static const struct bpf_map_ops bloom_ops = {
@@ -140,14 +149,21 @@ static struct bpf_map_type_list bloom_type __read_mostly = {
 
 static int __init register_bloom_map(void)
 {
+        printk("* In function %s *\n", __FUNCTION__);
 	bpf_register_map_type(&bloom_type);
 	return 0;
+}
+
+static void __exit unregister_bloom_map(void)
+{
+        printk("* In function %s *\n", __FUNCTION__);
+	return;
 }
 
 //late_initcall(register_bloom_map);
 
 module_init(register_bloom_map);
-//module_exit(cleanup_hello_4);
+module_exit(unregister_bloom_map);
 
 
 

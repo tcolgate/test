@@ -1,7 +1,7 @@
 obj-m += bloomtab.o
 
 #KPATH := /lib/modules/$(shell uname -r)/build
-KPATH := /home/tristan/src/linux-4.2.2
+KPATH := /home/tristan/src/linux
 
 #ccflags-y := $(KPATH)/include
 
